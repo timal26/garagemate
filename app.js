@@ -1,5 +1,6 @@
-/* GarageMate V4 — Documents (facture/notice) via IndexedDB
-   + Injection auto des champs V3 dans ton HTML V4 (qui est volontairement minimal)
+/* GarageMate V4.1 — Documents (facture/notice) via IndexedDB
+   Fix iOS PWA: ouverture des fichiers IN-APP (viewer) + UI files qui déborde plus
+   + Injection auto des champs V3 dans ton HTML V4
 */
 
 const KEY_ITEMS = "garagemate_items_v4";
@@ -173,7 +174,6 @@ async function idbDeleteFilesByItem(itemId) {
 
 // ---- UI injection (restore V3 panel fields) ----
 function injectMissingStylesAndLayout() {
-  // Ton HTML V4 n’a pas les styles pour la liste -> on injecte un mini style
   const style = document.createElement("style");
   style.textContent = `
     #list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
@@ -183,7 +183,7 @@ function injectMissingStylesAndLayout() {
       background:var(--card);
     }
     .gmDot{width:10px;height:10px;border-radius:999px;background:var(--accent);margin-top:6px;flex:0 0 auto;}
-    .gmMeta{flex:1}
+    .gmMeta{flex:1;min-width:0}
     .gmTitle{font-weight:950}
     .gmPlace{color:var(--muted);font-size:13px;margin-top:2px;white-space:pre-wrap}
     .gmBadges{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
@@ -193,8 +193,10 @@ function injectMissingStylesAndLayout() {
       background:rgba(255,255,255,0.02);
     }
     .gmDesc{color:var(--muted);font-size:13px;margin-top:8px;white-space:pre-wrap}
-    .gmActions{display:flex;gap:8px}
+    .gmActions{display:flex;flex-direction:column;gap:8px;flex:0 0 auto}
     .gmActions button{padding:8px 10px;border-radius:10px;font-weight:900}
+
+    /* Tiles */
     .tiles{
       display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
     }
@@ -220,24 +222,98 @@ function injectMissingStylesAndLayout() {
     }
     .grid3{display:grid;grid-template-columns:1fr;gap:10px}
     @media(min-width:760px){ .grid3{grid-template-columns:1fr 1fr 1fr;} }
+
+    /* ✅ Files list UI (anti-débordement) */
+    .files{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .file{
+      display:flex;align-items:center;gap:10px;
+      padding:10px;border-radius:12px;border:1px solid var(--line);
+      background:rgba(255,255,255,0.02);
+      flex-wrap:wrap;
+    }
+    .file span{
+      flex:1 1 180px;
+      min-width:180px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .file button{padding:8px 10px;font-size:13px;white-space:nowrap}
+
+    /* ✅ Viewer */
+    .gmViewer{
+      position:fixed;inset:0;z-index:9999;
+      background:rgba(0,0,0,.75);
+      display:none;
+      padding:14px;
+    }
+    .gmViewerBox{
+      max-width:900px;margin:0 auto;
+      background:var(--card);border:1px solid var(--line);
+      border-radius:16px;
+      overflow:hidden;
+      height:calc(100vh - 28px);
+      display:flex;flex-direction:column;
+    }
+    .gmViewerTop{
+      padding:10px 12px;border-bottom:1px solid var(--line);
+      display:flex;gap:10px;align-items:center;
+    }
+    .gmViewerTop .title{
+      flex:1;min-width:0;font-weight:900;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .gmViewerTop button{padding:8px 10px;border-radius:10px;font-weight:900}
+    .gmViewerBody{
+      flex:1;
+      display:flex;
+      background:#0b0b0c;
+    }
+    .gmViewerBody iframe, .gmViewerBody img{
+      width:100%;height:100%;border:0;object-fit:contain;
+    }
+    .gmViewerHint{
+      padding:12px;color:var(--muted);font-size:13px;
+    }
   `;
   document.head.appendChild(style);
+
+  // Viewer root
+  if (!document.getElementById("gmViewer")) {
+    const v = document.createElement("div");
+    v.id = "gmViewer";
+    v.className = "gmViewer";
+    v.innerHTML = `
+      <div class="gmViewerBox">
+        <div class="gmViewerTop">
+          <div class="title" id="gmViewerTitle">Document</div>
+          <button id="gmViewerDownload">⬇️</button>
+          <button id="gmViewerClose">✖️</button>
+        </div>
+        <div class="gmViewerBody" id="gmViewerBody"></div>
+      </div>
+    `;
+    document.body.appendChild(v);
+
+    $("gmViewerClose").onclick = closeViewer;
+    // fermer si clic sur fond
+    v.addEventListener("click", (e) => {
+      if (e.target === v) closeViewer();
+    });
+  }
 }
 
 function ensurePanelFields() {
   const panelCard = qs("#panel .card");
   if (!panelCard) return;
 
-  // On repère la zone "Documents" (label) pour insérer avant
   const docLabel = Array.from(panelCard.querySelectorAll(".label"))
     .find(el => (el.textContent || "").toLowerCase().includes("documents"));
 
-  // Si déjà injecté, stop
   if ($("zoneTiles") && $("placeTiles") && $("fBrand") && $("fRef") && $("fBuyDate") && $("fNote")) return;
 
   const container = document.createElement("div");
   container.id = "v3Injected";
-
   container.innerHTML = `
     <div class="grid3" style="margin-top:10px;">
       <div>
@@ -276,12 +352,8 @@ function ensurePanelFields() {
     </div>
   `;
 
-  if (docLabel) {
-    panelCard.insertBefore(container, docLabel);
-  } else {
-    // fallback: insert near top
-    panelCard.appendChild(container);
-  }
+  if (docLabel) panelCard.insertBefore(container, docLabel);
+  else panelCard.appendChild(container);
 }
 
 // ---- Tiles logic ----
@@ -379,7 +451,6 @@ function chooseZone(z) {
 
   const places = loadPlaces();
   renderPlaceTiles(places);
-  // reset docs view stays same (docs are tied to itemId, not zone)
 }
 
 function choosePlace(p, isOther) {
@@ -400,6 +471,64 @@ function choosePlace(p, isOther) {
   setPlaceLabel();
 }
 
+// ---- Viewer (IN-APP open) ----
+let currentObjectUrl = null;
+
+function closeViewer() {
+  const v = $("gmViewer");
+  const body = $("gmViewerBody");
+  if (body) body.innerHTML = "";
+  if (v) v.style.display = "none";
+
+  if (currentObjectUrl) {
+    try { URL.revokeObjectURL(currentObjectUrl); } catch {}
+    currentObjectUrl = null;
+  }
+}
+
+function openViewer({ name, type, blob }) {
+  const v = $("gmViewer");
+  const body = $("gmViewerBody");
+  const title = $("gmViewerTitle");
+  const btnDl = $("gmViewerDownload");
+
+  if (!v || !body || !title || !btnDl) return;
+
+  closeViewer(); // clean old
+  title.textContent = name || "Document";
+
+  currentObjectUrl = URL.createObjectURL(blob);
+
+  btnDl.onclick = () => {
+    // Téléchargement (ou "ouvrir" dans iOS) via <a>
+    const a = document.createElement("a");
+    a.href = currentObjectUrl;
+    a.download = name || "document";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  // Render depending on type
+  if ((type || "").startsWith("image/")) {
+    const img = document.createElement("img");
+    img.src = currentObjectUrl;
+    img.alt = name || "image";
+    body.appendChild(img);
+  } else if (type === "application/pdf" || (name || "").toLowerCase().endsWith(".pdf")) {
+    const iframe = document.createElement("iframe");
+    iframe.src = currentObjectUrl;
+    body.appendChild(iframe);
+  } else {
+    const div = document.createElement("div");
+    div.className = "gmViewerHint";
+    div.innerHTML = `Ce type de fichier n’a pas d’aperçu intégré.<br>Utilise le bouton ⬇️ pour le télécharger/ouvrir.`;
+    body.appendChild(div);
+  }
+
+  v.style.display = "block";
+}
+
 // ---- Documents UI ----
 async function refreshFilesList(itemId) {
   const list = $("filesList");
@@ -416,7 +545,6 @@ async function refreshFilesList(itemId) {
     return;
   }
 
-  // Tri par date décroissante
   files.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   for (const f of files) {
@@ -432,18 +560,15 @@ async function refreshFilesList(itemId) {
     row.querySelector('[data-act="open"]').onclick = async () => {
       const rec = await idbGetFile(f.id);
       if (!rec) return alert("Fichier introuvable.");
-      const url = URL.createObjectURL(rec.blob);
-      // ouvre dans une nouvelle vue
-      window.open(url, "_blank");
-      // nettoyage URL plus tard
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      // ✅ ouverture IN-APP (fiable sur iOS PWA)
+      openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
     };
 
     row.querySelector('[data-act="del"]').onclick = async () => {
       if (!confirm("Supprimer ce document ?")) return;
       await idbDeleteFile(f.id);
       await refreshFilesList(itemId);
-      render(); // pour mettre à jour le badge "Docs"
+      render(); // maj badge Docs
     };
 
     list.appendChild(row);
@@ -465,7 +590,6 @@ async function handleFileInputChange(itemId) {
   const files = Array.from(input.files);
   if (!files.length) return;
 
-  // Reset input so same file can be selected again later
   input.value = "";
 
   try {
@@ -483,7 +607,7 @@ async function handleFileInputChange(itemId) {
       await idbPutFile(rec);
     }
     await refreshFilesList(itemId);
-    render(); // update docs count badge
+    render();
   } catch (e) {
     console.error(e);
     alert("Erreur lors de l’ajout du fichier (stockage plein ?).");
@@ -502,20 +626,15 @@ function openPanel(mode, item = null) {
   editingId = mode === "edit" ? item.id : null;
   editingIsNew = mode === "add";
 
-  // id temporaire pour attacher des docs avant d'enregistrer
   tempNewId = editingIsNew ? uid() : null;
   const activeItemId = editingId || tempNewId;
 
-  // Base fields (always present in HTML)
   if ($("fName")) $("fName").value = item ? (item.name || "") : "";
-
-  // Injected fields (may not exist until injection)
   if ($("fBrand")) $("fBrand").value = item ? (item.brand || "") : "";
   if ($("fRef")) $("fRef").value = item ? (item.ref || "") : "";
   if ($("fBuyDate")) $("fBuyDate").value = item ? (item.buyDate || "") : "";
   if ($("fNote")) $("fNote").value = item ? (item.note || "") : "";
 
-  // Zone/place
   selZone = item?.zone && places[item.zone] ? item.zone : "Garage";
 
   const placeList = places[selZone] || [];
@@ -536,16 +655,11 @@ function openPanel(mode, item = null) {
   renderZoneTiles(places);
   renderPlaceTiles(places);
 
-  // docs list for this active item id
   refreshFilesList(activeItemId);
 
-  // file input handler
   const fileInput = $("fileInput");
-  if (fileInput) {
-    fileInput.onchange = () => handleFileInputChange(activeItemId);
-  }
+  if (fileInput) fileInput.onchange = () => handleFileInputChange(activeItemId);
 
-  // focus
   if ($("fName")) $("fName").focus();
 }
 
@@ -553,8 +667,8 @@ async function closePanel(cancel = false) {
   const panel = $("panel");
   if (panel) panel.style.display = "none";
 
-  // Si on annule une création et qu’on avait ajouté des docs,
-  // on les supprime (sinon ça traîne dans la base).
+  closeViewer();
+
   if (cancel && editingIsNew && tempNewId) {
     try { await idbDeleteFilesByItem(tempNewId); } catch {}
   }
@@ -567,7 +681,6 @@ async function closePanel(cancel = false) {
   selPlace = "";
   selPlaceIsOther = false;
 
-  // reset file UI
   if ($("filesList")) $("filesList").innerHTML = "";
   if ($("fileInput")) $("fileInput").value = "";
 }
@@ -622,7 +735,6 @@ async function saveFromPanel() {
     it.buyDate = buyDate;
     it.note = note;
   } else {
-    // Create new item with the tempNewId that already holds documents
     const newId = tempNewId || uid();
     items.unshift({
       id: newId,
@@ -664,7 +776,6 @@ function matchesQuery(it, q) {
 
 async function render() {
   const q = ($("q")?.value || "").trim().toLowerCase();
-
   const list = $("list");
   const empty = $("empty");
 
@@ -683,7 +794,6 @@ async function render() {
 
   if (!list) return;
 
-  // render sequentially (docs count needs async)
   for (const it of filtered) {
     const docN = await docsCount(it.id);
 
@@ -723,10 +833,9 @@ async function render() {
     row.querySelector(".gmDesc").textContent = it.note ? it.note : "—";
 
     row.querySelector('[data-act="edit"]').onclick = () => openPanel("edit", it);
-    row.querySelector('[data-act="docs"]').onclick = () => openPanel("edit", it); // même panneau, section docs déjà là
+    row.querySelector('[data-act="docs"]').onclick = () => openPanel("edit", it);
     row.querySelector('[data-act="del"]').onclick = async () => {
       if (!confirm("Supprimer cet objet (et ses documents) ?")) return;
-      // delete files then item
       await idbDeleteFilesByItem(it.id);
       const remaining = loadItems().filter(x => x.id !== it.id);
       saveItems(remaining);
@@ -741,11 +850,9 @@ async function render() {
 async function resetAll() {
   if (!confirm("Tout effacer (objets + emplacements + documents) ?")) return;
 
-  // clear localStorage keys
   localStorage.removeItem(KEY_ITEMS);
   localStorage.removeItem(KEY_PLACES);
 
-  // clear indexeddb store
   try {
     const db = await openDB();
     await new Promise((resolve, reject) => {
@@ -766,12 +873,9 @@ window.addEventListener("load", async () => {
 
   if (!localStorage.getItem(KEY_PLACES)) savePlaces(DEFAULT_PLACES);
 
-  // Inject V3 panel fields into your V4 HTML
   ensurePanelFields();
-
   migrateIfEmpty();
 
-  // Wire buttons
   $("btnOpenAdd").onclick = () => openPanel("add");
   $("btnCancel").onclick = () => closePanel(true);
   $("btnSave").onclick = () => saveFromPanel();
@@ -779,8 +883,11 @@ window.addEventListener("load", async () => {
   $("btnReset").onclick = () => resetAll();
   $("q").addEventListener("input", () => render());
 
-  // Ensure IndexedDB is ready early (so you don't discover errors after selecting a file)
-  try { await openDB(); } catch (e) { console.error(e); alert("IndexedDB indisponible sur ce navigateur."); }
+  try { await openDB(); }
+  catch (e) {
+    console.error(e);
+    alert("IndexedDB indisponible sur ce navigateur.");
+  }
 
   render();
 });
