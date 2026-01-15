@@ -1,7 +1,5 @@
-/* GarageMate V4.2 — Documents via IndexedDB + viewer IN-APP + fixes iPhone
-   - Plus de focus automatique (évite zoom/scroll chelou)
-   - Viewer dans le HTML (fiable PWA)
-   - UI fichiers propre (pas de débordement)
+/* GarageMate V4.3 — Documents via IndexedDB + viewer IN-APP
+   + NEW: aperçu automatique en bas du panneau quand tu ouvres la fiche (📎)
 */
 
 const KEY_ITEMS = "garagemate_items_v4";
@@ -150,14 +148,13 @@ async function idbDeleteFilesByItem(itemId){
   await Promise.all(files.map(f=>idbDeleteFile(f.id)));
 }
 
-// ---- Inject champs V3 + tuiles (inchangé) ----
+// ---- Inject champs V3 + tuiles ----
 function ensurePanelFields(){
   const panel = $("panel");
   if(!panel) return;
   const card = panel.querySelector(".card");
   if(!card) return;
 
-  // déjà injecté ?
   if($("zoneTiles") && $("placeTiles") && $("fBrand") && $("fRef") && $("fBuyDate") && $("fNote")) return;
 
   const docLabel = Array.from(card.querySelectorAll(".label"))
@@ -166,7 +163,7 @@ function ensurePanelFields(){
   const box=document.createElement("div");
   box.innerHTML = `
     <div style="margin-top:10px;display:grid;grid-template-columns:1fr;gap:10px">
-      <div style="display:grid;grid-template-columns:1fr;gap:10px" class="grid3">
+      <div class="grid3">
         <div>
           <div class="label">Marque</div>
           <input id="fBrand" placeholder="Ex : Facom, Bosch, Makita…" />
@@ -200,12 +197,10 @@ function ensurePanelFields(){
     </div>
   `;
 
-  // petit hack : class grid3 via media query serait dans HTML, mais on reste simple
-  // on insère avant Documents
   if(docLabel) card.insertBefore(box, docLabel);
   else card.appendChild(box);
 
-  // ajoute les styles tuiles si pas existant (au cas où)
+  // styles tuiles (au cas où)
   const st=document.createElement("style");
   st.textContent=`
     .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -217,9 +212,7 @@ function ensurePanelFields(){
     .tile.active{border-color:rgba(22,163,74,.60);box-shadow:0 0 0 2px rgba(22,163,74,.15) inset}
     .pill{display:inline-block;margin-left:8px;font-size:12px;color:var(--muted);
       border:1px solid var(--line);border-radius:999px;padding:2px 8px;vertical-align:middle}
-    @media(min-width:760px){
-      .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-    }
+    @media(min-width:760px){ .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px} }
   `;
   document.head.appendChild(st);
 }
@@ -375,6 +368,128 @@ function openViewer({name,type,blob}){
   v.style.display="block";
 }
 
+// ---- Aperçu automatique dans le panneau (en bas) ----
+function ensureInlinePreviewArea() {
+  const panel = $("panel");
+  if (!panel) return;
+  const card = panel.querySelector(".card");
+  if (!card) return;
+
+  // déjà présent ?
+  if ($("inlinePreviewWrap")) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "inlinePreviewWrap";
+  wrap.style.marginTop = "12px";
+  wrap.innerHTML = `
+    <div class="label">Aperçu (auto)</div>
+    <div id="inlinePreviewBox" class="status">Aucun aperçu.</div>
+  `;
+
+  // On le met juste avant les boutons Enregistrer / Annuler
+  const footer = card.querySelector(".footerRow");
+  if (footer) card.insertBefore(wrap, footer);
+  else card.appendChild(wrap);
+}
+
+function setInlinePreviewNone(msg="Aucun aperçu.") {
+  const box = $("inlinePreviewBox");
+  if (!box) return;
+  box.innerHTML = msg;
+}
+
+async function showInlinePreviewForLatest(itemId) {
+  ensureInlinePreviewArea();
+
+  const box = $("inlinePreviewBox");
+  if (!box) return;
+
+  const files = await idbListFilesByItem(itemId);
+  if (!files.length) {
+    setInlinePreviewNone("Aucun document attaché.");
+    return;
+  }
+
+  files.sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+  const latest = files[0];
+
+  const rec = await idbGetFile(latest.id);
+  if (!rec) {
+    setInlinePreviewNone("Document introuvable.");
+    return;
+  }
+
+  // Nettoyer l'ancien objectURL éventuel stocké sur l'élément
+  const oldUrl = box.dataset.url;
+  if (oldUrl) {
+    try { URL.revokeObjectURL(oldUrl); } catch {}
+    delete box.dataset.url;
+  }
+
+  const url = URL.createObjectURL(rec.blob);
+  box.dataset.url = url;
+
+  const safeName = escapeHtml(rec.name || "document");
+  const type = rec.type || "";
+
+  // Image : miniature + clic pour ouvrir en grand
+  if (type.startsWith("image/")) {
+    box.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <img src="${url}" alt="${safeName}" style="width:110px;height:110px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#0b0b0c" />
+        <div style="flex:1;min-width:160px">
+          <div style="font-weight:900">Dernier fichier :</div>
+          <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Voir</button>
+          </div>
+        </div>
+      </div>
+    `;
+    $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+    return;
+  }
+
+  // PDF : mini cadre + bouton Voir
+  if (type === "application/pdf" || (rec.name||"").toLowerCase().endsWith(".pdf")) {
+    box.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="width:110px;height:110px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#0b0b0c;font-weight:900">
+          PDF
+        </div>
+        <div style="flex:1;min-width:160px">
+          <div style="font-weight:900">Dernier fichier :</div>
+          <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
+          <div style="margin-top:8px">
+            <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Voir</button>
+          </div>
+        </div>
+      </div>
+    `;
+    $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+    return;
+  }
+
+  // Autre fichier : juste infos + bouton ouvrir/télécharger
+  box.innerHTML = `
+    <div style="font-weight:900">Dernier fichier :</div>
+    <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
+    <div style="margin-top:8px">
+      <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Ouvrir</button>
+    </div>
+  `;
+  $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
 // ---- Documents list ----
 function prettyBytes(n){
   const u=["o","Ko","Mo","Go"]; let i=0; let x=n;
@@ -392,6 +507,8 @@ async function refreshFilesList(itemId){
     div.className="status";
     div.textContent="Aucun document attaché pour l’instant.";
     list.appendChild(div);
+    // aperçu aussi
+    await showInlinePreviewForLatest(itemId);
     return;
   }
 
@@ -424,6 +541,9 @@ async function refreshFilesList(itemId){
 
     list.appendChild(row);
   }
+
+  // ✅ aperçu auto = fichier le plus récent
+  await showInlinePreviewForLatest(itemId);
 }
 
 async function handleFileInputChange(itemId){
@@ -494,12 +614,19 @@ function openPanel(mode, item=null){
   const fileInput=$("fileInput");
   if(fileInput) fileInput.onchange=()=>handleFileInputChange(activeItemId);
 
-  // ✅ PAS de focus automatique → évite zoom/scroll
+  // ✅ PAS d’autofocus (tu l’as demandé : zéro zoom parasite)
 }
 
 async function closePanel(cancel=false){
   const panel=$("panel"); if(panel) panel.style.display="none";
   closeViewer();
+
+  // cleanup inline preview url
+  const box = $("inlinePreviewBox");
+  if (box && box.dataset.url) {
+    try { URL.revokeObjectURL(box.dataset.url); } catch {}
+    delete box.dataset.url;
+  }
 
   if(cancel && editingIsNew && tempNewId){
     try{ await idbDeleteFilesByItem(tempNewId); }catch{}
@@ -671,9 +798,9 @@ window.addEventListener("load", async ()=>{
   if(!localStorage.getItem(KEY_PLACES)) savePlaces(DEFAULT_PLACES);
 
   ensurePanelFields();
+  ensureInlinePreviewArea();
   migrateIfEmpty();
 
-  // viewer close
   $("gmViewerClose").onclick=closeViewer;
   $("gmViewer").addEventListener("click",(e)=>{ if(e.target===$("gmViewer")) closeViewer(); });
 
