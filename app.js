@@ -1,6 +1,6 @@
-// GarageMate v2.2 — Zones + emplacements en tuiles (localStorage)
-const KEY_ITEMS = "garagemate_items_v22";
-const KEY_PLACES = "garagemate_places_v22";
+// GarageMate v3 — zones+emplacements en tuiles + marque/réf/date (localStorage)
+const KEY_ITEMS = "garagemate_items_v3";
+const KEY_PLACES = "garagemate_places_v3";
 
 const $ = (id) => document.getElementById(id);
 
@@ -49,7 +49,6 @@ function loadPlaces() {
   const p = loadJSON(KEY_PLACES, null);
   if (!p) return structuredClone(DEFAULT_PLACES);
 
-  // merge with defaults (safe)
   const merged = structuredClone(DEFAULT_PLACES);
   for (const z of Object.keys(p)) {
     if (!merged[z]) merged[z] = [];
@@ -68,20 +67,50 @@ function saveItems(items) {
   saveJSON(KEY_ITEMS, items);
 }
 
+// --- Migration: try to import from older keys if v3 empty ---
+function migrateIfNeeded() {
+  const current = loadItems();
+  if (current.length) return;
+
+  // Attempt to import from known older keys (best-effort)
+  const oldKeys = [
+    "garagemate_items_v22",
+    "garagemate_items_v21t",
+    "garagemate_items_v21b",
+    "garagemate_items_v1",
+    "garagemate_items_v11",
+    "garagemate_items_v21"
+  ];
+
+  for (const k of oldKeys) {
+    const old = loadJSON(k, null);
+    if (Array.isArray(old) && old.length) {
+      const migrated = old.map((it) => ({
+        id: it.id || uid(),
+        name: it.name || "Sans nom",
+        zone: it.zone || "Garage",
+        place: it.place || "—",
+        note: it.note || "",
+        brand: it.brand || "",
+        ref: it.ref || "",
+        buyDate: it.buyDate || "",
+        createdAt: it.createdAt || Date.now()
+      }));
+      saveItems(migrated);
+      return;
+    }
+  }
+}
+
 // --- Panel state ---
 let editingId = null;
 let selZone = "";
 let selPlace = "";
 let selPlaceIsOther = false;
 
-function setZoneLabel() {
-  $("zoneSel").textContent = selZone || "—";
-}
-function setPlaceLabel() {
-  $("placeSel").textContent = selPlace || "—";
-}
+function setZoneLabel() { $("zoneSel").textContent = selZone || "—"; }
+function setPlaceLabel() { $("placeSel").textContent = selPlace || "—"; }
 
-// --- Tile helpers ---
 function clearActive(containerId) {
   document.querySelectorAll(`#${containerId} .tile`).forEach(t => t.classList.remove("active"));
 }
@@ -94,7 +123,6 @@ function activateTile(containerId, key) {
 function renderZoneTiles(places) {
   const zoneTiles = $("zoneTiles");
   zoneTiles.innerHTML = "";
-
   const zones = Object.keys(places);
 
   for (const z of zones) {
@@ -106,7 +134,6 @@ function renderZoneTiles(places) {
     zoneTiles.appendChild(d);
   }
 
-  // default zone
   if (!selZone || !places[selZone]) selZone = "Garage";
   activateTile("zoneTiles", selZone);
   setZoneLabel();
@@ -127,7 +154,6 @@ function renderPlaceTiles(places) {
     placeTiles.appendChild(d);
   }
 
-  // Other tile
   const other = document.createElement("div");
   other.className = "tile";
   other.dataset.key = "__other__";
@@ -135,7 +161,6 @@ function renderPlaceTiles(places) {
   other.onclick = () => choosePlace("__other__", true);
   placeTiles.appendChild(other);
 
-  // default selection
   if (selPlaceIsOther) {
     activateTile("placeTiles", "__other__");
   } else if (selPlace && list.includes(selPlace)) {
@@ -145,13 +170,11 @@ function renderPlaceTiles(places) {
     selPlaceIsOther = false;
     activateTile("placeTiles", selPlace);
   } else {
-    // no places -> force other
     selPlace = "__other__";
     selPlaceIsOther = true;
     activateTile("placeTiles", "__other__");
   }
 
-  // show/hide other input
   $("placeOtherWrap").style.display = selPlaceIsOther ? "block" : "none";
   if (!selPlaceIsOther) $("fPlaceOther").value = "";
 
@@ -195,12 +218,13 @@ function openPanel(mode, item = null) {
   const places = loadPlaces();
 
   $("fName").value = item ? item.name : "";
+  $("fBrand").value = item ? (item.brand || "") : "";
+  $("fRef").value = item ? (item.ref || "") : "";
+  $("fBuyDate").value = item ? (item.buyDate || "") : "";
   $("fNote").value = item ? (item.note || "") : "";
 
-  // zone/place from item or defaults
   selZone = item?.zone && places[item.zone] ? item.zone : "Garage";
 
-  // place handling
   if (item?.place && (places[selZone] || []).includes(item.place)) {
     selPlace = item.place;
     selPlaceIsOther = false;
@@ -218,7 +242,6 @@ function openPanel(mode, item = null) {
   renderZoneTiles(places);
   renderPlaceTiles(places);
 
-  // If editing with custom place, show label nicely
   if (selPlaceIsOther) {
     $("placeSel").textContent = ($("fPlaceOther").value || "Autre…").trim() || "Autre…";
   }
@@ -241,7 +264,6 @@ function saveFromPanel() {
   if (!name) return alert("Il manque le nom.");
 
   const places = loadPlaces();
-
   if (!selZone) return alert("Choisis une zone.");
 
   let placeFinal = "";
@@ -251,7 +273,6 @@ function saveFromPanel() {
     if (!typed) return alert("Il manque l’emplacement (Autre…).");
     placeFinal = typed;
 
-    // Add place into zone if new
     if (!places[selZone]) places[selZone] = [];
     if (!places[selZone].includes(placeFinal)) {
       places[selZone].push(placeFinal);
@@ -262,7 +283,11 @@ function saveFromPanel() {
     placeFinal = selPlace;
   }
 
+  const brand = ($("fBrand").value || "").trim();
+  const ref = ($("fRef").value || "").trim();
+  const buyDate = ($("fBuyDate").value || "").trim(); // yyyy-mm-dd or ""
   const note = ($("fNote").value || "").trim();
+
   const items = loadItems();
 
   if (editingId) {
@@ -271,6 +296,9 @@ function saveFromPanel() {
     it.name = name;
     it.zone = selZone;
     it.place = placeFinal;
+    it.brand = brand;
+    it.ref = ref;
+    it.buyDate = buyDate;
     it.note = note;
   } else {
     items.unshift({
@@ -278,6 +306,9 @@ function saveFromPanel() {
       name,
       zone: selZone,
       place: placeFinal,
+      brand,
+      ref,
+      buyDate,
       note,
       createdAt: Date.now()
     });
@@ -292,6 +323,13 @@ function saveFromPanel() {
 function placeLabel(it) {
   return `${it.zone || "—"} > ${it.place || "—"}`;
 }
+function badgeParts(it) {
+  const b = [];
+  if (it.brand) b.push(`Marque: ${it.brand}`);
+  if (it.ref) b.push(`Réf: ${it.ref}`);
+  if (it.buyDate) b.push(`Achat: ${it.buyDate}`);
+  return b;
+}
 
 function render() {
   const q = ($("q")?.value || "").trim().toLowerCase();
@@ -299,8 +337,9 @@ function render() {
   const empty = $("empty");
 
   const items = loadItems();
+
   const filtered = !q ? items : items.filter((it) => {
-    const blob = `${it.name}\n${it.zone}\n${it.place}\n${it.note || ""}`.toLowerCase();
+    const blob = `${it.name}\n${it.zone}\n${it.place}\n${it.brand || ""}\n${it.ref || ""}\n${it.buyDate || ""}\n${it.note || ""}`.toLowerCase();
     return blob.includes(q);
   });
 
@@ -320,6 +359,7 @@ function render() {
       <div class="meta">
         <div class="title"></div>
         <div class="place"></div>
+        <div class="badges"></div>
         <div class="desc"></div>
       </div>
       <div class="actions">
@@ -327,11 +367,30 @@ function render() {
         <button class="mini" data-act="del">🗑️</button>
       </div>
     `;
+
     row.querySelector(".title").textContent = it.name;
     row.querySelector(".place").textContent = placeLabel(it);
+
+    const badges = row.querySelector(".badges");
+    const parts = badgeParts(it);
+    if (parts.length) {
+      for (const p of parts) {
+        const s = document.createElement("div");
+        s.className = "badge";
+        s.textContent = p;
+        badges.appendChild(s);
+      }
+    } else {
+      const s = document.createElement("div");
+      s.className = "badge";
+      s.textContent = "—";
+      badges.appendChild(s);
+    }
+
     row.querySelector(".desc").textContent = it.note ? it.note : "—";
     row.querySelector('[data-act="edit"]').onclick = () => openPanel("edit", it);
     row.querySelector('[data-act="del"]').onclick = () => deleteItem(it.id);
+
     list.appendChild(row);
   }
 }
@@ -353,6 +412,7 @@ function resetAll() {
 // --- Boot ---
 window.addEventListener("load", () => {
   if (!localStorage.getItem(KEY_PLACES)) savePlaces(DEFAULT_PLACES);
+  migrateIfNeeded();
 
   $("btnOpenAdd").onclick = () => openPanel("add");
   $("btnCancel").onclick = closePanel;
