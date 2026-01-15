@@ -1,13 +1,16 @@
-/* GarageMate V4.3.1 — Documents via IndexedDB + viewer IN-APP
-   FIX: aperçu auto rendu "fail-safe"
-   - recalculé à chaque ouverture de fiche
-   - erreurs affichées dans l’UI (pas silencieuses)
+/* GarageMate V5 — Photo principale (IndexedDB) + Miniatures
+   - V4.3.1 inclus : documents + aperçu auto + viewer
+   - NEW:
+     - photo principale par objet (store "photos")
+     - affichée dans la fiche
+     - miniature dans la liste
 */
 
-const KEY_ITEMS = "garagemate_items_v4";
-const KEY_PLACES = "garagemate_places_v4";
+const KEY_ITEMS = "garagemate_items_v5";
+const KEY_PLACES = "garagemate_places_v4"; // on garde la même clé
 
 const OLD_ITEM_KEYS = [
+  "garagemate_items_v4",  // depuis V4
   "garagemate_items_v3",
   "garagemate_items_v22",
   "garagemate_items_v21t",
@@ -58,12 +61,14 @@ function savePlaces(places){ saveJSON(KEY_PLACES, places); }
 function loadItems(){ return loadJSON(KEY_ITEMS, []); }
 function saveItems(items){ saveJSON(KEY_ITEMS, items); }
 
-function migrateIfEmpty(){
+function migrateItemsIfEmpty(){
   const cur = loadItems();
   if(cur.length) return;
+
   for(const k of OLD_ITEM_KEYS){
     const old = loadJSON(k, null);
     if(Array.isArray(old) && old.length){
+      // Migration + ajout champ photoId
       const migrated = old.map(it => ({
         id: it.id || uid(),
         name: it.name || "Sans nom",
@@ -73,6 +78,7 @@ function migrateIfEmpty(){
         ref: it.ref || "",
         buyDate: it.buyDate || "",
         note: it.note || "",
+        photoId: it.photoId || null,
         createdAt: it.createdAt || Date.now()
       }));
       saveItems(migrated);
@@ -82,18 +88,28 @@ function migrateIfEmpty(){
 }
 
 // ---- IndexedDB ----
-const DB_NAME="garagemate_db_v4";
-const DB_VERSION=1;
+const DB_NAME="garagemate_db_v5";
+const DB_VERSION=2;
 const STORE_FILES="files";
+const STORE_PHOTOS="photos";
 
 function openDB(){
   return new Promise((resolve,reject)=>{
     const req=indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded=()=>{
       const db=req.result;
+
+      // documents
       if(!db.objectStoreNames.contains(STORE_FILES)){
         const store=db.createObjectStore(STORE_FILES,{keyPath:"id"});
         store.createIndex("itemId","itemId",{unique:false});
+        store.createIndex("createdAt","createdAt",{unique:false});
+      }
+
+      // photo principale
+      if(!db.objectStoreNames.contains(STORE_PHOTOS)){
+        const store=db.createObjectStore(STORE_PHOTOS,{keyPath:"id"});
+        store.createIndex("itemId","itemId",{unique:true});
         store.createIndex("createdAt","createdAt",{unique:false});
       }
     };
@@ -102,6 +118,7 @@ function openDB(){
   });
 }
 
+// ---- Files (documents) ----
 async function idbPutFile(record){
   const db=await openDB();
   return new Promise((resolve,reject)=>{
@@ -111,7 +128,6 @@ async function idbPutFile(record){
     tx.objectStore(STORE_FILES).put(record);
   });
 }
-
 async function idbGetFile(fileId){
   const db=await openDB();
   return new Promise((resolve,reject)=>{
@@ -122,7 +138,6 @@ async function idbGetFile(fileId){
     req.onerror=()=>reject(req.error);
   });
 }
-
 async function idbDeleteFile(fileId){
   const db=await openDB();
   return new Promise((resolve,reject)=>{
@@ -132,7 +147,6 @@ async function idbDeleteFile(fileId){
     tx.objectStore(STORE_FILES).delete(fileId);
   });
 }
-
 async function idbListFilesByItem(itemId){
   const db=await openDB();
   return new Promise((resolve,reject)=>{
@@ -144,13 +158,56 @@ async function idbListFilesByItem(itemId){
     req.onerror=()=>reject(req.error);
   });
 }
-
 async function idbDeleteFilesByItem(itemId){
   const files=await idbListFilesByItem(itemId);
   await Promise.all(files.map(f=>idbDeleteFile(f.id)));
 }
 
-// ---- Inject champs V3 + tuiles ----
+// ---- Photos (photo principale) ----
+async function idbUpsertPhotoForItem({itemId, blob, name, type}){
+  const db=await openDB();
+  const record = {
+    id: `photo_${itemId}`,        // clé stable = 1 photo par item
+    itemId,
+    name: name || "photo.jpg",
+    type: type || "image/jpeg",
+    createdAt: Date.now(),
+    blob
+  };
+
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE_PHOTOS,"readwrite");
+    tx.oncomplete=()=>resolve(record.id);
+    tx.onerror=()=>reject(tx.error);
+    tx.objectStore(STORE_PHOTOS).put(record);
+  });
+}
+
+async function idbGetPhotoByItem(itemId){
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE_PHOTOS,"readonly");
+    tx.onerror=()=>reject(tx.error);
+    const idx=tx.objectStore(STORE_PHOTOS).index("itemId");
+    const req=idx.get(IDBKeyRange.only(itemId));
+    req.onsuccess=()=>resolve(req.result||null);
+    req.onerror=()=>reject(req.error);
+  });
+}
+
+async function idbDeletePhotoByItem(itemId){
+  const db=await openDB();
+  const rec = await idbGetPhotoByItem(itemId);
+  if(!rec) return false;
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE_PHOTOS,"readwrite");
+    tx.oncomplete=()=>resolve(true);
+    tx.onerror=()=>reject(tx.error);
+    tx.objectStore(STORE_PHOTOS).delete(rec.id);
+  });
+}
+
+// ---- Inject champs V3 + tuiles (comme avant) ----
 function ensurePanelFields(){
   const panel = $("panel");
   if(!panel) return;
@@ -226,6 +283,11 @@ let tempNewId=null;
 let selZone="";
 let selPlace="";
 let selPlaceIsOther=false;
+
+// Photo pending (nouvel item non encore enregistré)
+let pendingPhotoBlob = null;
+let pendingPhotoName = null;
+let pendingPhotoType = null;
 
 function setZoneLabel(){ const z=$("zoneSel"); if(z) z.textContent=selZone||"—"; }
 function setPlaceLabel(){ const p=$("placeSel"); if(p) p.textContent=selPlaceIsOther ? "Autre…" : (selPlace||"—"); }
@@ -318,7 +380,6 @@ function choosePlace(p,isOther){
 
 // ---- Viewer ----
 let currentObjectUrl=null;
-
 function closeViewer(){
   const v=$("gmViewer");
   const body=$("gmViewerBody");
@@ -329,7 +390,6 @@ function closeViewer(){
     currentObjectUrl=null;
   }
 }
-
 function openViewer({name,type,blob}){
   const v=$("gmViewer");
   const body=$("gmViewerBody");
@@ -369,7 +429,7 @@ function openViewer({name,type,blob}){
   v.style.display="block";
 }
 
-// ---- Aperçu automatique (fail-safe) ----
+// ---- Aperçu automatique docs (inline) ----
 function ensureInlinePreviewArea(){
   const panel=$("panel");
   if(!panel) return;
@@ -410,11 +470,9 @@ function escapeHtml(str){
 async function showInlinePreviewForLatest(itemId){
   try{
     ensureInlinePreviewArea();
-
     const box=$("inlinePreviewBox");
     if(!box) return;
 
-    // Nettoyage ancien url
     const oldUrl = box.dataset.url;
     if(oldUrl){
       try{ URL.revokeObjectURL(oldUrl);}catch{}
@@ -585,6 +643,116 @@ async function handleFileInputChange(itemId){
   }
 }
 
+// ---- Photo principale UI ----
+let photoObjectUrl = null;
+
+function clearPhotoPreview(){
+  const pv = $("photoPreview");
+  const title = $("photoTitle");
+  if(!pv || !title) return;
+
+  if(photoObjectUrl){
+    try{ URL.revokeObjectURL(photoObjectUrl);}catch{}
+    photoObjectUrl=null;
+  }
+
+  pv.innerHTML = `<span style="color:var(--muted);font-weight:900">Aucune</span>`;
+  title.textContent = "Aucune photo";
+}
+
+function setPhotoPreviewFromBlob(blob, name="photo.jpg"){
+  const pv = $("photoPreview");
+  const title = $("photoTitle");
+  if(!pv || !title) return;
+
+  if(photoObjectUrl){
+    try{ URL.revokeObjectURL(photoObjectUrl);}catch{}
+    photoObjectUrl=null;
+  }
+
+  photoObjectUrl = URL.createObjectURL(blob);
+  pv.innerHTML = `<img src="${photoObjectUrl}" alt="photo">`;
+  title.textContent = name;
+}
+
+async function loadPhotoForItem(itemId){
+  try{
+    const rec = await idbGetPhotoByItem(itemId);
+    if(!rec || !rec.blob){
+      clearPhotoPreview();
+      return;
+    }
+    setPhotoPreviewFromBlob(rec.blob, rec.name || "photo");
+  } catch(e){
+    console.error(e);
+    clearPhotoPreview();
+  }
+}
+
+function wirePhotoButtons(activeItemId){
+  const btnPick = $("btnPhotoPick");
+  const btnRemove = $("btnPhotoRemove");
+  const input = $("photoInput");
+
+  if(btnPick && input){
+    btnPick.onclick = () => {
+      // iPhone: ouvrir l'input file
+      input.click();
+    };
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      input.value = "";
+      if(!f) return;
+
+      // Si item existant => save direct en IndexedDB
+      if(editingId) {
+        try{
+          await idbUpsertPhotoForItem({
+            itemId: editingId,
+            blob: f,
+            name: f.name || "photo.jpg",
+            type: f.type || "image/jpeg"
+          });
+          await loadPhotoForItem(editingId);
+          render(); // miniatures
+        } catch(e){
+          console.error(e);
+          alert("Impossible d’enregistrer la photo (stockage plein ?).");
+        }
+      } else {
+        // nouvel item pas encore enregistré : on garde en mémoire
+        pendingPhotoBlob = f;
+        pendingPhotoName = f.name || "photo.jpg";
+        pendingPhotoType = f.type || "image/jpeg";
+        setPhotoPreviewFromBlob(pendingPhotoBlob, pendingPhotoName);
+      }
+    };
+  }
+
+  if(btnRemove){
+    btnRemove.onclick = async () => {
+      if(!confirm("Supprimer la photo principale ?")) return;
+
+      if(editingId){
+        try{
+          await idbDeletePhotoByItem(editingId);
+          clearPhotoPreview();
+          render();
+        } catch(e){
+          console.error(e);
+          alert("Suppression impossible.");
+        }
+      } else {
+        // nouvel item
+        pendingPhotoBlob = null;
+        pendingPhotoName = null;
+        pendingPhotoType = null;
+        clearPhotoPreview();
+      }
+    };
+  }
+}
+
 // ---- Panel open/close/save ----
 function openPanel(mode, item=null){
   const panel=$("panel"); if(!panel) return;
@@ -594,6 +762,11 @@ function openPanel(mode, item=null){
   editingId = (mode==="edit") ? item.id : null;
   editingIsNew = (mode==="add");
   tempNewId = editingIsNew ? uid() : null;
+
+  // reset pending photo for new item
+  pendingPhotoBlob = null;
+  pendingPhotoName = null;
+  pendingPhotoType = null;
 
   const activeItemId = editingId || tempNewId;
 
@@ -620,34 +793,54 @@ function openPanel(mode, item=null){
   renderZoneTiles(places);
   renderPlaceTiles(places);
 
-  // ✅ Force l'aperçu immédiatement (même si la liste tarde)
+  // docs
   previewMsg("Aperçu en cours…");
   showInlinePreviewForLatest(activeItemId).catch(()=>previewMsg("Aperçu impossible."));
-
   refreshFilesList(activeItemId);
 
   const fileInput=$("fileInput");
   if(fileInput) fileInput.onchange=()=>handleFileInputChange(activeItemId);
+
+  // photo principale
+  if(editingId) {
+    loadPhotoForItem(editingId);
+  } else {
+    clearPhotoPreview();
+  }
+  wirePhotoButtons(activeItemId);
 }
 
 async function closePanel(cancel=false){
   const panel=$("panel"); if(panel) panel.style.display="none";
   closeViewer();
 
+  // cleanup inline preview url
   const box = $("inlinePreviewBox");
   if (box && box.dataset.url) {
     try { URL.revokeObjectURL(box.dataset.url); } catch {}
     delete box.dataset.url;
   }
 
+  // cleanup photo url
+  if(photoObjectUrl){
+    try{ URL.revokeObjectURL(photoObjectUrl);}catch{}
+    photoObjectUrl=null;
+  }
+
+  // si annule création: supprimer docs éventuels
   if(cancel && editingIsNew && tempNewId){
     try{ await idbDeleteFilesByItem(tempNewId); }catch{}
   }
 
   editingId=null; editingIsNew=false; tempNewId=null;
   selZone=""; selPlace=""; selPlaceIsOther=false;
+
+  // reset UI
   if($("filesList")) $("filesList").innerHTML="";
   if($("fileInput")) $("fileInput").value="";
+  if($("photoInput")) $("photoInput").value="";
+
+  pendingPhotoBlob=null; pendingPhotoName=null; pendingPhotoType=null;
 }
 
 function resolvePlaceAndPersist(places){
@@ -686,20 +879,39 @@ async function saveFromPanel(){
 
   const items=loadItems();
 
+  let finalId = editingId;
+
   if(editingId){
     const it = items.find(x=>x.id===editingId);
     if(!it) return closePanel(true);
     it.name=name; it.zone=selZone; it.place=res.place;
     it.brand=brand; it.ref=ref; it.buyDate=buyDate; it.note=note;
   } else {
-    const newId = tempNewId || uid();
+    finalId = tempNewId || uid();
     items.unshift({
-      id:newId, name,
+      id:finalId, name,
       zone: selZone || "Garage",
       place: res.place,
       brand, ref, buyDate, note,
+      photoId: null,
       createdAt: Date.now()
     });
+  }
+
+  // si nouvel item + photo pending => on la stocke maintenant
+  if(!editingId && pendingPhotoBlob && finalId){
+    try{
+      await idbUpsertPhotoForItem({
+        itemId: finalId,
+        blob: pendingPhotoBlob,
+        name: pendingPhotoName || "photo.jpg",
+        type: pendingPhotoType || "image/jpeg"
+      });
+    } catch(e){
+      console.error(e);
+      // on n'empêche pas l'enregistrement de l'objet, mais on prévient
+      alert("Objet enregistré, mais la photo n’a pas pu être stockée (stockage plein ?).");
+    }
   }
 
   saveItems(items);
@@ -720,6 +932,19 @@ async function docsCount(itemId){
   try{ return (await idbListFilesByItem(itemId)).length; }catch{ return 0; }
 }
 
+async function getThumbUrlForItem(itemId){
+  // on génère un objectURL par item pour la liste, et on le révoque au prochain render()
+  try{
+    const rec = await idbGetPhotoByItem(itemId);
+    if(!rec || !rec.blob) return null;
+    return URL.createObjectURL(rec.blob);
+  } catch {
+    return null;
+  }
+}
+
+let listThumbUrls = []; // to revoke
+
 async function render(){
   const q=($("q")?.value || "").trim().toLowerCase();
   const list=$("list");
@@ -729,6 +954,12 @@ async function render(){
   const filtered=items.filter(it=>matchesQuery(it,q));
 
   if(list) list.innerHTML="";
+
+  // revoke old thumb urls
+  for(const u of listThumbUrls){
+    try{ URL.revokeObjectURL(u); }catch{}
+  }
+  listThumbUrls = [];
 
   if(empty){
     if(!items.length) empty.textContent="Aucun objet pour l’instant.";
@@ -742,11 +973,13 @@ async function render(){
 
   for(const it of filtered){
     const docN = await docsCount(it.id);
+    const thumbUrl = await getThumbUrlForItem(it.id);
+    if(thumbUrl) listThumbUrls.push(thumbUrl);
 
     const row=document.createElement("div");
     row.className="gmItem";
     row.innerHTML=`
-      <div class="gmDot"></div>
+      <div class="gmThumb">${thumbUrl ? `<img src="${thumbUrl}" alt="thumb">` : `GM`}</div>
       <div class="gmMeta">
         <div class="gmTitle"></div>
         <div class="gmPlace"></div>
@@ -775,8 +1008,9 @@ async function render(){
     row.querySelector('[data-act="edit"]').onclick=()=>openPanel("edit",it);
     row.querySelector('[data-act="docs"]').onclick=()=>openPanel("edit",it);
     row.querySelector('[data-act="del"]').onclick=async()=>{
-      if(!confirm("Supprimer cet objet (et ses documents) ?")) return;
+      if(!confirm("Supprimer cet objet (docs + photo) ?")) return;
       await idbDeleteFilesByItem(it.id);
+      await idbDeletePhotoByItem(it.id);
       saveItems(loadItems().filter(x=>x.id!==it.id));
       render();
     };
@@ -787,21 +1021,30 @@ async function render(){
 
 // ---- Reset ----
 async function resetAll(){
-  if(!confirm("Tout effacer (objets + emplacements + documents) ?")) return;
+  if(!confirm("Tout effacer (objets + emplacements + documents + photos) ?")) return;
   localStorage.removeItem(KEY_ITEMS);
   localStorage.removeItem(KEY_PLACES);
 
   try{
     const db=await openDB();
+    // clear files
     await new Promise((resolve,reject)=>{
       const tx=db.transaction(STORE_FILES,"readwrite");
       tx.oncomplete=()=>resolve(true);
       tx.onerror=()=>reject(tx.error);
       tx.objectStore(STORE_FILES).clear();
     });
+    // clear photos
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE_PHOTOS,"readwrite");
+      tx.oncomplete=()=>resolve(true);
+      tx.onerror=()=>reject(tx.error);
+      tx.objectStore(STORE_PHOTOS).clear();
+    });
   }catch{}
 
   savePlaces(DEFAULT_PLACES);
+  saveItems([]);
   render();
 }
 
@@ -811,7 +1054,9 @@ window.addEventListener("load", async ()=>{
 
   ensurePanelFields();
   ensureInlinePreviewArea();
-  migrateIfEmpty();
+
+  // migration
+  migrateItemsIfEmpty();
 
   $("gmViewerClose").onclick=closeViewer;
   $("gmViewer").addEventListener("click",(e)=>{ if(e.target===$("gmViewer")) closeViewer(); });
