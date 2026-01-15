@@ -1,5 +1,7 @@
-/* GarageMate V4.3 — Documents via IndexedDB + viewer IN-APP
-   + NEW: aperçu automatique en bas du panneau quand tu ouvres la fiche (📎)
+/* GarageMate V4.3.1 — Documents via IndexedDB + viewer IN-APP
+   FIX: aperçu auto rendu "fail-safe"
+   - recalculé à chaque ouverture de fiche
+   - erreurs affichées dans l’UI (pas silencieuses)
 */
 
 const KEY_ITEMS = "garagemate_items_v4";
@@ -200,7 +202,6 @@ function ensurePanelFields(){
   if(docLabel) card.insertBefore(box, docLabel);
   else card.appendChild(box);
 
-  // styles tuiles (au cas où)
   const st=document.createElement("style");
   st.textContent=`
     .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -368,126 +369,129 @@ function openViewer({name,type,blob}){
   v.style.display="block";
 }
 
-// ---- Aperçu automatique dans le panneau (en bas) ----
-function ensureInlinePreviewArea() {
-  const panel = $("panel");
-  if (!panel) return;
-  const card = panel.querySelector(".card");
-  if (!card) return;
+// ---- Aperçu automatique (fail-safe) ----
+function ensureInlinePreviewArea(){
+  const panel=$("panel");
+  if(!panel) return;
+  const card=panel.querySelector(".card");
+  if(!card) return;
 
-  // déjà présent ?
-  if ($("inlinePreviewWrap")) return;
+  if($("inlinePreviewWrap")) return;
 
-  const wrap = document.createElement("div");
-  wrap.id = "inlinePreviewWrap";
-  wrap.style.marginTop = "12px";
-  wrap.innerHTML = `
+  const wrap=document.createElement("div");
+  wrap.id="inlinePreviewWrap";
+  wrap.style.marginTop="12px";
+  wrap.innerHTML=`
     <div class="label">Aperçu (auto)</div>
     <div id="inlinePreviewBox" class="status">Aucun aperçu.</div>
   `;
 
-  // On le met juste avant les boutons Enregistrer / Annuler
-  const footer = card.querySelector(".footerRow");
-  if (footer) card.insertBefore(wrap, footer);
+  const footer=card.querySelector(".footerRow");
+  if(footer) card.insertBefore(wrap, footer);
   else card.appendChild(wrap);
 }
 
-function setInlinePreviewNone(msg="Aucun aperçu.") {
-  const box = $("inlinePreviewBox");
-  if (!box) return;
-  box.innerHTML = msg;
-}
-
-async function showInlinePreviewForLatest(itemId) {
+function previewMsg(html){
   ensureInlinePreviewArea();
-
-  const box = $("inlinePreviewBox");
-  if (!box) return;
-
-  const files = await idbListFilesByItem(itemId);
-  if (!files.length) {
-    setInlinePreviewNone("Aucun document attaché.");
-    return;
-  }
-
-  files.sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
-  const latest = files[0];
-
-  const rec = await idbGetFile(latest.id);
-  if (!rec) {
-    setInlinePreviewNone("Document introuvable.");
-    return;
-  }
-
-  // Nettoyer l'ancien objectURL éventuel stocké sur l'élément
-  const oldUrl = box.dataset.url;
-  if (oldUrl) {
-    try { URL.revokeObjectURL(oldUrl); } catch {}
-    delete box.dataset.url;
-  }
-
-  const url = URL.createObjectURL(rec.blob);
-  box.dataset.url = url;
-
-  const safeName = escapeHtml(rec.name || "document");
-  const type = rec.type || "";
-
-  // Image : miniature + clic pour ouvrir en grand
-  if (type.startsWith("image/")) {
-    box.innerHTML = `
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <img src="${url}" alt="${safeName}" style="width:110px;height:110px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#0b0b0c" />
-        <div style="flex:1;min-width:160px">
-          <div style="font-weight:900">Dernier fichier :</div>
-          <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
-          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-            <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Voir</button>
-          </div>
-        </div>
-      </div>
-    `;
-    $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
-    return;
-  }
-
-  // PDF : mini cadre + bouton Voir
-  if (type === "application/pdf" || (rec.name||"").toLowerCase().endsWith(".pdf")) {
-    box.innerHTML = `
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <div style="width:110px;height:110px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#0b0b0c;font-weight:900">
-          PDF
-        </div>
-        <div style="flex:1;min-width:160px">
-          <div style="font-weight:900">Dernier fichier :</div>
-          <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
-          <div style="margin-top:8px">
-            <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Voir</button>
-          </div>
-        </div>
-      </div>
-    `;
-    $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
-    return;
-  }
-
-  // Autre fichier : juste infos + bouton ouvrir/télécharger
-  box.innerHTML = `
-    <div style="font-weight:900">Dernier fichier :</div>
-    <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
-    <div style="margin-top:8px">
-      <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Ouvrir</button>
-    </div>
-  `;
-  $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+  const box=$("inlinePreviewBox");
+  if(!box) return;
+  box.innerHTML = html;
 }
 
 function escapeHtml(str){
   return String(str)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+}
+
+async function showInlinePreviewForLatest(itemId){
+  try{
+    ensureInlinePreviewArea();
+
+    const box=$("inlinePreviewBox");
+    if(!box) return;
+
+    // Nettoyage ancien url
+    const oldUrl = box.dataset.url;
+    if(oldUrl){
+      try{ URL.revokeObjectURL(oldUrl);}catch{}
+      delete box.dataset.url;
+    }
+
+    const files = await idbListFilesByItem(itemId);
+    if(!files.length){
+      previewMsg("Aucun document attaché.");
+      return;
+    }
+
+    files.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const latest = files[0];
+
+    const rec = await idbGetFile(latest.id);
+    if(!rec || !rec.blob){
+      previewMsg("Document introuvable (ou non lisible).");
+      return;
+    }
+
+    const url = URL.createObjectURL(rec.blob);
+    box.dataset.url = url;
+
+    const safeName = escapeHtml(rec.name || "document");
+    const type = rec.type || "";
+
+    if(type.startsWith("image/")){
+      previewMsg(`
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <img src="${url}" alt="${safeName}"
+            style="width:110px;height:110px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#0b0b0c" />
+          <div style="flex:1;min-width:160px">
+            <div style="font-weight:900">Dernier fichier :</div>
+            <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
+            <div style="margin-top:8px">
+              <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Voir</button>
+            </div>
+          </div>
+        </div>
+      `);
+      $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+      return;
+    }
+
+    if(type==="application/pdf" || (rec.name||"").toLowerCase().endsWith(".pdf")){
+      previewMsg(`
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="width:110px;height:110px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#0b0b0c;font-weight:900">
+            PDF
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div style="font-weight:900">Dernier fichier :</div>
+            <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
+            <div style="margin-top:8px">
+              <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Voir</button>
+            </div>
+          </div>
+        </div>
+      `);
+      $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+      return;
+    }
+
+    previewMsg(`
+      <div style="font-weight:900">Dernier fichier :</div>
+      <div style="color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${safeName}</div>
+      <div style="margin-top:8px">
+        <button id="btnInlineOpen" style="padding:8px 10px;border-radius:10px;font-weight:900">Ouvrir</button>
+      </div>
+    `);
+    $("btnInlineOpen").onclick = () => openViewer({ name: rec.name, type: rec.type, blob: rec.blob });
+
+  } catch (e) {
+    console.error(e);
+    previewMsg(`Aperçu impossible (erreur).`);
+  }
 }
 
 // ---- Documents list ----
@@ -500,50 +504,57 @@ function prettyBytes(n){
 async function refreshFilesList(itemId){
   const list=$("filesList"); if(!list) return;
   list.innerHTML="";
-  const files=await idbListFilesByItem(itemId);
 
-  if(!files.length){
-    const div=document.createElement("div");
-    div.className="status";
-    div.textContent="Aucun document attaché pour l’instant.";
-    list.appendChild(div);
-    // aperçu aussi
+  try{
+    const files=await idbListFilesByItem(itemId);
+
+    if(!files.length){
+      const div=document.createElement("div");
+      div.className="status";
+      div.textContent="Aucun document attaché pour l’instant.";
+      list.appendChild(div);
+
+      await showInlinePreviewForLatest(itemId);
+      return;
+    }
+
+    files.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+
+    for(const f of files){
+      const row=document.createElement("div");
+      row.className="file";
+      row.innerHTML=`
+        <span></span>
+        <div class="btns">
+          <button data-act="open">Ouvrir</button>
+          <button data-act="del">Suppr</button>
+        </div>
+      `;
+      row.querySelector("span").textContent=`${f.name} (${prettyBytes(f.size||0)})`;
+
+      row.querySelector('[data-act="open"]').onclick=async()=>{
+        const rec=await idbGetFile(f.id);
+        if(!rec) return alert("Fichier introuvable.");
+        openViewer({name:rec.name, type:rec.type, blob:rec.blob});
+      };
+
+      row.querySelector('[data-act="del"]').onclick=async()=>{
+        if(!confirm("Supprimer ce document ?")) return;
+        await idbDeleteFile(f.id);
+        await refreshFilesList(itemId);
+        render();
+      };
+
+      list.appendChild(row);
+    }
+
     await showInlinePreviewForLatest(itemId);
-    return;
+
+  } catch (e) {
+    console.error(e);
+    list.innerHTML = `<div class="status">Erreur affichage documents.</div>`;
+    previewMsg("Aperçu impossible (erreur).");
   }
-
-  files.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-
-  for(const f of files){
-    const row=document.createElement("div");
-    row.className="file";
-    row.innerHTML=`
-      <span></span>
-      <div class="btns">
-        <button data-act="open">Ouvrir</button>
-        <button data-act="del">Suppr</button>
-      </div>
-    `;
-    row.querySelector("span").textContent=`${f.name} (${prettyBytes(f.size||0)})`;
-
-    row.querySelector('[data-act="open"]').onclick=async()=>{
-      const rec=await idbGetFile(f.id);
-      if(!rec) return alert("Fichier introuvable.");
-      openViewer({name:rec.name, type:rec.type, blob:rec.blob});
-    };
-
-    row.querySelector('[data-act="del"]').onclick=async()=>{
-      if(!confirm("Supprimer ce document ?")) return;
-      await idbDeleteFile(f.id);
-      await refreshFilesList(itemId);
-      render();
-    };
-
-    list.appendChild(row);
-  }
-
-  // ✅ aperçu auto = fichier le plus récent
-  await showInlinePreviewForLatest(itemId);
 }
 
 async function handleFileInputChange(itemId){
@@ -609,19 +620,20 @@ function openPanel(mode, item=null){
   renderZoneTiles(places);
   renderPlaceTiles(places);
 
+  // ✅ Force l'aperçu immédiatement (même si la liste tarde)
+  previewMsg("Aperçu en cours…");
+  showInlinePreviewForLatest(activeItemId).catch(()=>previewMsg("Aperçu impossible."));
+
   refreshFilesList(activeItemId);
 
   const fileInput=$("fileInput");
   if(fileInput) fileInput.onchange=()=>handleFileInputChange(activeItemId);
-
-  // ✅ PAS d’autofocus (tu l’as demandé : zéro zoom parasite)
 }
 
 async function closePanel(cancel=false){
   const panel=$("panel"); if(panel) panel.style.display="none";
   closeViewer();
 
-  // cleanup inline preview url
   const box = $("inlinePreviewBox");
   if (box && box.dataset.url) {
     try { URL.revokeObjectURL(box.dataset.url); } catch {}
