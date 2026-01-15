@@ -1,16 +1,16 @@
-/* GarageMate V5 — Photo principale (IndexedDB) + Miniatures
-   - V4.3.1 inclus : documents + aperçu auto + viewer
-   - NEW:
-     - photo principale par objet (store "photos")
-     - affichée dans la fiche
-     - miniature dans la liste
+/* GarageMate V5.1 — FIX PDF "déjà zoomé" + Thème bois + Sélecteur de police
+   Base: V5 (photo principale) + V4.3.1 (documents + aperçu auto + viewer)
+   NEW:
+   - PDF: affichage "fit" via paramètres + sandbox + styles iframe
+   - Police: menu #fontSelect, sauvegarde localStorage
 */
 
 const KEY_ITEMS = "garagemate_items_v5";
-const KEY_PLACES = "garagemate_places_v4"; // on garde la même clé
+const KEY_PLACES = "garagemate_places_v4";
+const KEY_FONT = "garagemate_font_v1";
 
 const OLD_ITEM_KEYS = [
-  "garagemate_items_v4",  // depuis V4
+  "garagemate_items_v4",
   "garagemate_items_v3",
   "garagemate_items_v22",
   "garagemate_items_v21t",
@@ -68,7 +68,6 @@ function migrateItemsIfEmpty(){
   for(const k of OLD_ITEM_KEYS){
     const old = loadJSON(k, null);
     if(Array.isArray(old) && old.length){
-      // Migration + ajout champ photoId
       const migrated = old.map(it => ({
         id: it.id || uid(),
         name: it.name || "Sans nom",
@@ -99,14 +98,12 @@ function openDB(){
     req.onupgradeneeded=()=>{
       const db=req.result;
 
-      // documents
       if(!db.objectStoreNames.contains(STORE_FILES)){
         const store=db.createObjectStore(STORE_FILES,{keyPath:"id"});
         store.createIndex("itemId","itemId",{unique:false});
         store.createIndex("createdAt","createdAt",{unique:false});
       }
 
-      // photo principale
       if(!db.objectStoreNames.contains(STORE_PHOTOS)){
         const store=db.createObjectStore(STORE_PHOTOS,{keyPath:"id"});
         store.createIndex("itemId","itemId",{unique:true});
@@ -167,7 +164,7 @@ async function idbDeleteFilesByItem(itemId){
 async function idbUpsertPhotoForItem({itemId, blob, name, type}){
   const db=await openDB();
   const record = {
-    id: `photo_${itemId}`,        // clé stable = 1 photo par item
+    id: `photo_${itemId}`,
     itemId,
     name: name || "photo.jpg",
     type: type || "image/jpeg",
@@ -207,7 +204,7 @@ async function idbDeletePhotoByItem(itemId){
   });
 }
 
-// ---- Inject champs V3 + tuiles (comme avant) ----
+// ---- Inject champs V3 + tuiles ----
 function ensurePanelFields(){
   const panel = $("panel");
   if(!panel) return;
@@ -284,7 +281,7 @@ let selZone="";
 let selPlace="";
 let selPlaceIsOther=false;
 
-// Photo pending (nouvel item non encore enregistré)
+// Photo pending pour new item
 let pendingPhotoBlob = null;
 let pendingPhotoName = null;
 let pendingPhotoType = null;
@@ -378,8 +375,9 @@ function choosePlace(p,isOther){
   setPlaceLabel();
 }
 
-// ---- Viewer ----
+// ---- Viewer (FIX PDF) ----
 let currentObjectUrl=null;
+
 function closeViewer(){
   const v=$("gmViewer");
   const body=$("gmViewerBody");
@@ -390,6 +388,15 @@ function closeViewer(){
     currentObjectUrl=null;
   }
 }
+
+// Force un rendu "fit" sur iOS : paramètres + iframe sans zoom
+function makePdfViewerUrl(url){
+  // Les PDF viewers respectent souvent #view=FitH/Fit/zoom
+  // FitH = largeur, Fit = page entière (selon viewer)
+  // On met FitH + zoom=page-width en fallback
+  return `${url}#view=FitH&zoom=page-width`;
+}
+
 function openViewer({name,type,blob}){
   const v=$("gmViewer");
   const body=$("gmViewerBody");
@@ -417,7 +424,12 @@ function openViewer({name,type,blob}){
     body.appendChild(img);
   } else if(type==="application/pdf" || (name||"").toLowerCase().endsWith(".pdf")){
     const iframe=document.createElement("iframe");
-    iframe.src=currentObjectUrl;
+    iframe.src = makePdfViewerUrl(currentObjectUrl);
+    iframe.setAttribute("sandbox", "allow-same-origin allow-scripts allow-downloads");
+    iframe.style.width="100%";
+    iframe.style.height="100%";
+    iframe.style.border="0";
+    iframe.style.background="#0b0b0c";
     body.appendChild(iframe);
   } else {
     const div=document.createElement("div");
@@ -689,22 +701,19 @@ async function loadPhotoForItem(itemId){
   }
 }
 
-function wirePhotoButtons(activeItemId){
+function wirePhotoButtons(){
   const btnPick = $("btnPhotoPick");
   const btnRemove = $("btnPhotoRemove");
   const input = $("photoInput");
 
   if(btnPick && input){
-    btnPick.onclick = () => {
-      // iPhone: ouvrir l'input file
-      input.click();
-    };
+    btnPick.onclick = () => input.click();
+
     input.onchange = async () => {
       const f = input.files && input.files[0];
       input.value = "";
       if(!f) return;
 
-      // Si item existant => save direct en IndexedDB
       if(editingId) {
         try{
           await idbUpsertPhotoForItem({
@@ -714,13 +723,12 @@ function wirePhotoButtons(activeItemId){
             type: f.type || "image/jpeg"
           });
           await loadPhotoForItem(editingId);
-          render(); // miniatures
+          render();
         } catch(e){
           console.error(e);
           alert("Impossible d’enregistrer la photo (stockage plein ?).");
         }
       } else {
-        // nouvel item pas encore enregistré : on garde en mémoire
         pendingPhotoBlob = f;
         pendingPhotoName = f.name || "photo.jpg";
         pendingPhotoType = f.type || "image/jpeg";
@@ -743,7 +751,6 @@ function wirePhotoButtons(activeItemId){
           alert("Suppression impossible.");
         }
       } else {
-        // nouvel item
         pendingPhotoBlob = null;
         pendingPhotoName = null;
         pendingPhotoType = null;
@@ -751,6 +758,40 @@ function wirePhotoButtons(activeItemId){
       }
     };
   }
+}
+
+// ---- Police ----
+function fontCssFor(mode){
+  switch(mode){
+    case "rounded":
+      return `ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`;
+    case "serif":
+      return `ui-serif, Georgia, "Times New Roman", Times, serif`;
+    case "mono":
+      return `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
+    case "system":
+    default:
+      return `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`;
+  }
+}
+
+function applyFont(mode){
+  document.documentElement.style.setProperty("--font", fontCssFor(mode));
+}
+
+function initFontSelector(){
+  const sel = $("fontSelect");
+  if(!sel) return;
+
+  const saved = localStorage.getItem(KEY_FONT) || "system";
+  sel.value = saved;
+  applyFont(saved);
+
+  sel.addEventListener("change", () => {
+    const v = sel.value || "system";
+    localStorage.setItem(KEY_FONT, v);
+    applyFont(v);
+  });
 }
 
 // ---- Panel open/close/save ----
@@ -763,7 +804,6 @@ function openPanel(mode, item=null){
   editingIsNew = (mode==="add");
   tempNewId = editingIsNew ? uid() : null;
 
-  // reset pending photo for new item
   pendingPhotoBlob = null;
   pendingPhotoName = null;
   pendingPhotoType = null;
@@ -801,33 +841,28 @@ function openPanel(mode, item=null){
   const fileInput=$("fileInput");
   if(fileInput) fileInput.onchange=()=>handleFileInputChange(activeItemId);
 
-  // photo principale
-  if(editingId) {
-    loadPhotoForItem(editingId);
-  } else {
-    clearPhotoPreview();
-  }
-  wirePhotoButtons(activeItemId);
+  // photo
+  if(editingId) loadPhotoForItem(editingId);
+  else clearPhotoPreview();
+
+  wirePhotoButtons();
 }
 
 async function closePanel(cancel=false){
   const panel=$("panel"); if(panel) panel.style.display="none";
   closeViewer();
 
-  // cleanup inline preview url
   const box = $("inlinePreviewBox");
   if (box && box.dataset.url) {
     try { URL.revokeObjectURL(box.dataset.url); } catch {}
     delete box.dataset.url;
   }
 
-  // cleanup photo url
   if(photoObjectUrl){
     try{ URL.revokeObjectURL(photoObjectUrl);}catch{}
     photoObjectUrl=null;
   }
 
-  // si annule création: supprimer docs éventuels
   if(cancel && editingIsNew && tempNewId){
     try{ await idbDeleteFilesByItem(tempNewId); }catch{}
   }
@@ -835,7 +870,6 @@ async function closePanel(cancel=false){
   editingId=null; editingIsNew=false; tempNewId=null;
   selZone=""; selPlace=""; selPlaceIsOther=false;
 
-  // reset UI
   if($("filesList")) $("filesList").innerHTML="";
   if($("fileInput")) $("fileInput").value="";
   if($("photoInput")) $("photoInput").value="";
@@ -878,7 +912,6 @@ async function saveFromPanel(){
   if(!res.ok) return alert(res.msg);
 
   const items=loadItems();
-
   let finalId = editingId;
 
   if(editingId){
@@ -898,7 +931,6 @@ async function saveFromPanel(){
     });
   }
 
-  // si nouvel item + photo pending => on la stocke maintenant
   if(!editingId && pendingPhotoBlob && finalId){
     try{
       await idbUpsertPhotoForItem({
@@ -909,7 +941,6 @@ async function saveFromPanel(){
       });
     } catch(e){
       console.error(e);
-      // on n'empêche pas l'enregistrement de l'objet, mais on prévient
       alert("Objet enregistré, mais la photo n’a pas pu être stockée (stockage plein ?).");
     }
   }
@@ -919,7 +950,7 @@ async function saveFromPanel(){
   render();
 }
 
-// ---- List render ----
+// ---- Render list ----
 function placeLabel(it){ return `${it.zone||"—"} > ${it.place||"—"}`; }
 
 function matchesQuery(it,q){
@@ -933,7 +964,6 @@ async function docsCount(itemId){
 }
 
 async function getThumbUrlForItem(itemId){
-  // on génère un objectURL par item pour la liste, et on le révoque au prochain render()
   try{
     const rec = await idbGetPhotoByItem(itemId);
     if(!rec || !rec.blob) return null;
@@ -943,7 +973,7 @@ async function getThumbUrlForItem(itemId){
   }
 }
 
-let listThumbUrls = []; // to revoke
+let listThumbUrls = [];
 
 async function render(){
   const q=($("q")?.value || "").trim().toLowerCase();
@@ -955,7 +985,6 @@ async function render(){
 
   if(list) list.innerHTML="";
 
-  // revoke old thumb urls
   for(const u of listThumbUrls){
     try{ URL.revokeObjectURL(u); }catch{}
   }
@@ -1027,14 +1056,12 @@ async function resetAll(){
 
   try{
     const db=await openDB();
-    // clear files
     await new Promise((resolve,reject)=>{
       const tx=db.transaction(STORE_FILES,"readwrite");
       tx.oncomplete=()=>resolve(true);
       tx.onerror=()=>reject(tx.error);
       tx.objectStore(STORE_FILES).clear();
     });
-    // clear photos
     await new Promise((resolve,reject)=>{
       const tx=db.transaction(STORE_PHOTOS,"readwrite");
       tx.oncomplete=()=>resolve(true);
@@ -1054,9 +1081,10 @@ window.addEventListener("load", async ()=>{
 
   ensurePanelFields();
   ensureInlinePreviewArea();
-
-  // migration
   migrateItemsIfEmpty();
+
+  // init font selector + apply saved
+  initFontSelector();
 
   $("gmViewerClose").onclick=closeViewer;
   $("gmViewer").addEventListener("click",(e)=>{ if(e.target===$("gmViewer")) closeViewer(); });
