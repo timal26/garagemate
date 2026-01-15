@@ -8,63 +8,104 @@
 
   <style>
     :root{
-      --bg:#0f0f10; --card:#151518; --line:#26262b;
-      --text:#f4f4f5; --muted:#a1a1aa; --accent:#16a34a; --accentText:#041307;
+      /* Palette sombre + bois clair */
+      --bg:#0f0f10;
+      --card: rgba(20,20,22,0.78);
+      --line: rgba(255,255,255,0.10);
+      --text:#f4f4f5;
+      --muted:#a1a1aa;
+      --accent:#16a34a;
+      --accentText:#041307;
       --danger:#ef4444;
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+
+      /* police par défaut (changeable via sélecteur) */
+      --font: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+
+      font-family: var(--font);
     }
 
     html { -webkit-text-size-adjust:100%; }
     body{
-      margin:0;background:var(--bg);color:var(--text);
+      margin:0;
+      color:var(--text);
       overflow-x:hidden;
       touch-action:manipulation;
+
+      /* ✅ Fond bois/parquet clair + ambiance sombre (sans image) */
+      background:
+        radial-gradient(1200px 700px at 10% -10%, rgba(255,220,170,0.22), transparent 65%),
+        radial-gradient(900px 600px at 110% 0%, rgba(255,235,200,0.16), transparent 60%),
+        radial-gradient(900px 700px at 50% 120%, rgba(0,0,0,0.65), rgba(0,0,0,0.92)),
+        /* nervures */
+        repeating-linear-gradient(
+          90deg,
+          rgba(250, 226, 188, 0.16) 0px,
+          rgba(250, 226, 188, 0.16) 28px,
+          rgba(220, 190, 150, 0.12) 28px,
+          rgba(220, 190, 150, 0.12) 32px,
+          rgba(245, 216, 175, 0.14) 32px,
+          rgba(245, 216, 175, 0.14) 70px
+        ),
+        /* voile sombre global */
+        linear-gradient(180deg, rgba(12,12,13,0.88), rgba(12,12,13,0.94));
+      background-attachment: fixed;
     }
+
     input, textarea, select { font-size:16px !important; }
 
     header{
       position:sticky;top:0;z-index:10;
-      background:rgba(15,15,16,.92);
-      backdrop-filter:blur(10px);
+      background:rgba(10,10,11,.68);
+      backdrop-filter:blur(14px);
       border-bottom:1px solid var(--line);
     }
+
     .wrap{max-width:900px;margin:0 auto;padding:16px; overflow-x:hidden;}
     h1{margin:6px 0 2px;font-size:22px}
     .sub{margin:0 0 12px;color:var(--muted);font-size:13px}
     .row{display:flex;gap:10px;align-items:center}
     .grow{flex:1;min-width:0}
 
-    input, textarea{
+    input, textarea, select{
       width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);
-      background:var(--card);color:var(--text);outline:none;
-      box-sizing:border-box;
+      background:rgba(20,20,22,0.65);
+      color:var(--text);outline:none;box-sizing:border-box;
       -webkit-appearance:none;appearance:none;
     }
     textarea{min-height:90px}
 
     button{
       padding:12px 14px;border-radius:12px;border:1px solid var(--line);
-      background:var(--card);color:var(--text);font-weight:850;cursor:pointer;
+      background:rgba(20,20,22,0.65);
+      color:var(--text);font-weight:850;cursor:pointer;
     }
     button.primary{background:var(--accent);border-color:var(--accent);color:var(--accentText);}
-    button.danger{border-color:rgba(239,68,68,.5);color:#fecaca;background:transparent}
+    button.danger{border-color:rgba(239,68,68,.55);color:#fecaca;background:transparent}
     button.ghost{background:transparent}
 
     .status{
       margin-top:10px;padding:10px;border-radius:14px;
       border:1px solid var(--line);
-      background:var(--card);color:var(--muted);font-size:13px;
+      background:rgba(20,20,22,0.65);
+      color:var(--muted);font-size:13px;
     }
 
     .panel{max-width:900px;margin:12px auto;padding:16px;display:none}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px; overflow:hidden}
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+      overflow:hidden;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+    }
     .label{font-size:12px;color:var(--muted);margin:10px 0 6px}
 
     /* ✅ Photo principale */
     .photoBox{
       border:1px dashed var(--line);
       border-radius:16px;
-      background:rgba(255,255,255,0.02);
+      background:rgba(255,255,255,0.03);
       padding:10px;
       display:flex;
       gap:10px;
@@ -79,14 +120,8 @@
       overflow:hidden;
       display:flex;align-items:center;justify-content:center;
     }
-    .photoPreview img{
-      width:100%;height:100%;
-      object-fit:cover;
-      display:block;
-    }
-    .photoMeta{
-      flex:1;min-width:170px;
-    }
+    .photoPreview img{width:100%;height:100%;object-fit:cover;display:block}
+    .photoMeta{flex:1;min-width:170px}
     .photoMeta .title{font-weight:900}
     .photoMeta .hint{color:var(--muted);font-size:13px;margin-top:2px}
     .photoBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -96,19 +131,18 @@
     .file{
       display:flex;align-items:center;gap:8px;
       padding:10px;border-radius:12px;border:1px solid var(--line);
-      background:rgba(255,255,255,0.02);
+      background:rgba(255,255,255,0.03);
       overflow:hidden;
     }
     .file span{
-      flex:1;
-      min-width:0;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
+      flex:1;min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       font-size:14px;
     }
     .file .btns{display:flex;gap:8px;flex:0 0 auto}
-    .file button{padding:8px 10px;font-size:13px;border-radius:10px;white-space:nowrap}
+    .file button{
+      padding:8px 10px;font-size:13px;border-radius:10px;white-space:nowrap;
+    }
 
     .footerRow{
       display:flex;gap:10px;justify-content:flex-end;
@@ -120,8 +154,9 @@
     .gmItem{
       display:flex;gap:12px;align-items:flex-start;
       padding:12px;border-radius:16px;border:1px solid var(--line);
-      background:var(--card);
+      background:rgba(20,20,22,0.68);
       overflow:hidden;
+      box-shadow: 0 10px 26px rgba(0,0,0,0.28);
     }
     .gmThumb{
       width:52px;height:52px;border-radius:12px;
@@ -140,7 +175,7 @@
     .gmBadge{
       font-size:12px;color:var(--text);
       border:1px solid var(--line);border-radius:999px;padding:3px 8px;
-      background:rgba(255,255,255,0.02);
+      background:rgba(255,255,255,0.04);
     }
     .gmDesc{color:var(--muted);font-size:13px;margin-top:8px;white-space:pre-wrap}
     .gmActions{display:flex;flex-direction:column;gap:8px;flex:0 0 auto}
@@ -149,14 +184,15 @@
     /* Viewer */
     .gmViewer{
       position:fixed;inset:0;z-index:9999;
-      background:rgba(0,0,0,.75);
+      background:rgba(0,0,0,.78);
       display:none;
       padding:14px;
       overflow:hidden;
     }
     .gmViewerBox{
       max-width:900px;margin:0 auto;
-      background:var(--card);border:1px solid var(--line);
+      background:rgba(20,20,22,0.92);
+      border:1px solid var(--line);
       border-radius:16px;
       overflow:hidden;
       height:calc(100vh - 28px);
@@ -180,8 +216,22 @@
     .gmViewerBody iframe, .gmViewerBody img{
       width:100%;height:100%;border:0;object-fit:contain;
     }
-    .gmViewerHint{
-      padding:12px;color:var(--muted);font-size:13px;
+    .gmViewerHint{padding:12px;color:var(--muted);font-size:13px}
+
+    /* Petit sélecteur police */
+    .fontBox{
+      display:flex;gap:8px;align-items:center;justify-content:flex-end;
+      margin-top:10px;flex-wrap:wrap;
+    }
+    .fontBox label{color:var(--muted);font-size:12px}
+    .fontBox select{
+      max-width:240px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:rgba(20,20,22,0.65);
+      color:var(--text);
+      font-weight:800;
     }
   </style>
 </head>
@@ -192,7 +242,7 @@
     <div class="row">
       <div class="grow">
         <h1>GarageMate</h1>
-        <p class="sub">V5 – photo principale + miniatures</p>
+        <p class="sub">V5.1 – bois sombre + polices + PDF mieux cadré (après app.js)</p>
       </div>
       <button id="btnOpenAdd" class="primary">+ Ajouter</button>
     </div>
@@ -200,6 +250,17 @@
     <div class="row" style="margin-top:10px;">
       <input id="q" placeholder="Rechercher (nom, marque, réf…)" />
       <button id="btnReset" class="danger">Reset</button>
+    </div>
+
+    <!-- ✅ Choix police -->
+    <div class="fontBox">
+      <label for="fontSelect">Police</label>
+      <select id="fontSelect">
+        <option value="system">Système (propre)</option>
+        <option value="rounded">Ronde (cool)</option>
+        <option value="serif">Sérieuse (serif)</option>
+        <option value="mono">Technique (mono)</option>
+      </select>
     </div>
 
     <div id="status" class="status">Chargement…</div>
@@ -212,7 +273,6 @@
     <div class="label">Nom</div>
     <input id="fName" placeholder="Ex : Clé de 10" />
 
-    <!-- ✅ Photo principale -->
     <div class="label">Photo principale</div>
     <div class="photoBox">
       <div class="photoPreview" id="photoPreview">
@@ -228,7 +288,6 @@
       </div>
     </div>
 
-    <!-- input caché -->
     <input id="photoInput" type="file" accept="image/*" capture="environment" style="display:none" />
 
     <div class="label">Documents (facture, notice, PDF, image…)</div>
