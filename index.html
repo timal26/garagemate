@@ -14,173 +14,120 @@
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     }
 
-    /* ✅ Anti-zoom iPhone :
-       Safari zoome si un input a une font-size < 16px */
-    input, textarea, select {
-      font-size: 16px !important;
-    }
+    /* Anti zoom iPhone */
+    input, textarea, select { font-size:16px !important; }
+    html { -webkit-text-size-adjust:100%; }
 
-    /* Petite aide pour éviter des zooms/scrolls bizarres */
-    html { -webkit-text-size-adjust: 100%; }
     body{margin:0;background:var(--bg);color:var(--text);}
-
     header{
       position:sticky;top:0;z-index:10;
       background:rgba(15,15,16,.92);
       backdrop-filter:blur(10px);
       border-bottom:1px solid var(--line);
     }
-    .wrap{max-width:760px;margin:0 auto;padding:16px 16px 18px;}
+    .wrap{max-width:900px;margin:0 auto;padding:16px;}
     h1{margin:6px 0 2px;font-size:22px}
     .sub{margin:0 0 12px;color:var(--muted);font-size:13px}
     .row{display:flex;gap:10px;align-items:center}
     .grow{flex:1}
 
     input, textarea{
-      width:100%;
-      padding:12px 12px;
-      border-radius:12px;
-      border:1px solid var(--line);
-      background:var(--card);
-      color:var(--text);
-      outline:none;
+      width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);
+      background:var(--card);color:var(--text);outline:none;
       box-sizing:border-box;
-      -webkit-appearance:none;
-      appearance:none;
     }
-    textarea{min-height:90px;resize:vertical}
+    textarea{min-height:90px}
 
     button{
       padding:12px 14px;border-radius:12px;border:1px solid var(--line);
       background:var(--card);color:var(--text);font-weight:850;cursor:pointer;
     }
     button.primary{background:var(--accent);border-color:var(--accent);color:var(--accentText);}
-    button.danger{background:transparent;border-color:rgba(239,68,68,.5);color:#fecaca;}
-    button.ghost{background:transparent;}
+    button.danger{border-color:rgba(239,68,68,.5);color:#fecaca;background:transparent}
+    button.ghost{background:transparent}
 
     .status{
-      margin-top:10px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);
+      margin-top:10px;padding:10px;border-radius:14px;
+      border:1px solid var(--line);
       background:var(--card);color:var(--muted);font-size:13px;
     }
 
-    .list{max-width:760px;margin:0 auto;padding:12px 16px 40px;display:flex;flex-direction:column;gap:10px;}
-    .item{
-      display:flex;gap:12px;align-items:flex-start;
-      padding:12px;border-radius:16px;border:1px solid var(--line);background:var(--card);
-    }
-    .dot{width:10px;height:10px;border-radius:999px;background:var(--accent);margin-top:6px;}
-    .meta{flex:1}
-    .title{font-weight:950}
-    .place{color:var(--muted);font-size:13px;margin-top:2px;white-space:pre-wrap}
-    .desc{color:var(--muted);font-size:13px;margin-top:6px;white-space:pre-wrap}
-    .actions{display:flex;gap:8px}
-    .mini{padding:8px 10px;border-radius:10px;font-weight:900}
-    .empty{max-width:760px;margin:14px auto 0;padding:12px 16px;color:var(--muted);}
+    .panel{max-width:900px;margin:12px auto;padding:16px;display:none}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
 
-    /* Panel */
-    .panel{max-width:760px;margin:12px auto 0;padding:12px 16px;display:none;}
-    .card{border:1px solid var(--line);background:var(--card);border-radius:16px;padding:12px;}
-    .label{font-size:12px;color:var(--muted);margin:2px 0 6px 2px}
-    .footerRow{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:10px}
-    .hint{color:var(--muted);font-size:12px;margin-top:6px}
+    .label{font-size:12px;color:var(--muted);margin:10px 0 6px}
 
-    /* Tiles */
-    .tiles{
-      display:grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap:10px;
+    .files{
+      display:flex;flex-direction:column;gap:8px;margin-top:6px;
     }
-    @media(min-width:520px){
-      .tiles{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    }
-    @media(min-width:760px){
-      .tiles{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    }
-    .tile{
+    .file{
+      display:flex;align-items:center;gap:10px;
+      padding:10px;border-radius:12px;
       border:1px solid var(--line);
       background:rgba(255,255,255,0.02);
-      color:var(--text);
-      padding:12px 10px;
-      border-radius:14px;
-      text-align:center;
-      font-weight:900;
-      cursor:pointer;
-      user-select:none;
-      line-height:1.15;
+      font-size:14px;
     }
-    .tile small{display:block;color:var(--muted);font-weight:750;margin-top:4px;font-size:12px}
-    .tile.active{
-      border-color:rgba(22,163,74,.60);
-      box-shadow: 0 0 0 2px rgba(22,163,74,.15) inset;
-    }
-    .pill{
-      display:inline-block;margin-left:8px;
-      font-size:12px;color:var(--muted);
-      border:1px solid var(--line);border-radius:999px;padding:2px 8px;
-      vertical-align:middle;
+    .file span{flex:1}
+    .file button{padding:6px 10px;font-size:13px}
+
+    .footerRow{
+      display:flex;gap:10px;justify-content:flex-end;
+      margin-top:14px;flex-wrap:wrap;
     }
   </style>
 </head>
 
 <body>
-  <header>
-    <div class="wrap">
-      <div class="row">
-        <div class="grow">
-          <h1>GarageMate</h1>
-          <p class="sub">Zones + emplacements en tuiles. Tap tap. Rangé (au moins sur écran).</p>
-        </div>
-        <button id="btnOpenAdd" class="primary">+ Ajouter</button>
+<header>
+  <div class="wrap">
+    <div class="row">
+      <div class="grow">
+        <h1>GarageMate</h1>
+        <p class="sub">V4 – documents (factures & notices)</p>
       </div>
-
-      <div class="row" style="margin-top:10px;">
-        <input id="q" placeholder="Rechercher (nom, zone, emplacement, note…)" />
-        <button id="btnReset" class="danger">Reset</button>
-      </div>
-
-      <div id="status" class="status">Chargement…</div>
+      <button id="btnOpenAdd" class="primary">+ Ajouter</button>
     </div>
-  </header>
 
-  <!-- Add / Edit Panel -->
-  <section id="panel" class="panel">
-    <div class="card">
-      <div class="label">Nom</div>
-      <input id="fName" placeholder="Ex : Clé de 10, Cric, Douille 13…" />
-
-      <div class="label" style="margin-top:10px;">
-        Zone <span class="pill" id="zoneSel">—</span>
-      </div>
-      <div id="zoneTiles" class="tiles"></div>
-
-      <div class="label" style="margin-top:10px;">
-        Emplacement <span class="pill" id="placeSel">—</span>
-      </div>
-      <div id="placeTiles" class="tiles"></div>
-
-      <div id="placeOtherWrap" style="display:none;margin-top:10px;">
-        <div class="label">Emplacement (Autre)</div>
-        <input id="fPlaceOther" placeholder="Ex : bac bleu, coffre Kangoo…" />
-        <div class="hint">Ce nouvel emplacement sera ajouté à la zone automatiquement.</div>
-      </div>
-
-      <div style="margin-top:10px;">
-        <div class="label">Infos (optionnel)</div>
-        <textarea id="fNote" placeholder="Marque, référence, commentaire…"></textarea>
-      </div>
-
-      <div class="footerRow">
-        <button id="btnCancel" class="ghost">Annuler</button>
-        <button id="btnSave" class="primary">Enregistrer</button>
-      </div>
-
-      <div class="hint">Astuce : “Autre…” sert à créer un nouvel emplacement dans la zone.</div>
+    <div class="row" style="margin-top:10px;">
+      <input id="q" placeholder="Rechercher (nom, marque, réf…)" />
+      <button id="btnReset" class="danger">Reset</button>
     </div>
-  </section>
 
-  <div id="empty" class="empty"></div>
-  <main id="list" class="list"></main>
+    <div id="status" class="status">Chargement…</div>
+  </div>
+</header>
 
-  <script src="./app.js"></script>
+<!-- PANEL AJOUT / ÉDITION -->
+<section id="panel" class="panel">
+  <div class="card">
+
+    <div class="label">Nom</div>
+    <input id="fName" placeholder="Ex : Clé de 10" />
+
+    <!-- (Les autres champs V3 restent gérés par app.js) -->
+
+    <!-- 🔹 NOUVELLE SECTION DOCUMENTS -->
+    <div class="label">Documents (facture, notice, PDF, image…)</div>
+
+    <input id="fileInput" type="file" multiple />
+
+    <div id="filesList" class="files">
+      <!-- fichiers injectés par JS -->
+    </div>
+
+    <div class="footerRow">
+      <button id="btnCancel" class="ghost">Annuler</button>
+      <button id="btnSave" class="primary">Enregistrer</button>
+    </div>
+
+  </div>
+</section>
+
+<main class="wrap">
+  <div id="empty" class="status">Aucun objet pour l’instant.</div>
+  <div id="list"></div>
+</main>
+
+<script src="./app.js"></script>
 </body>
 </html>
