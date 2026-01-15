@@ -2,7 +2,6 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <!-- ✅ verrouille le zoom iOS (anti zoom/dé-zoom) -->
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="theme-color" content="#111111">
   <title>GarageMate</title>
@@ -18,11 +17,9 @@
     html { -webkit-text-size-adjust:100%; }
     body{
       margin:0;background:var(--bg);color:var(--text);
-      overflow-x:hidden; /* ✅ anti slide droite/gauche */
+      overflow-x:hidden;
       touch-action:manipulation;
     }
-
-    /* Anti zoom iPhone sur focus */
     input, textarea, select { font-size:16px !important; }
 
     header{
@@ -61,10 +58,40 @@
 
     .panel{max-width:900px;margin:12px auto;padding:16px;display:none}
     .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px; overflow:hidden}
-
     .label{font-size:12px;color:var(--muted);margin:10px 0 6px}
 
-    /* ✅ Files list : plus de débordement */
+    /* ✅ Photo principale */
+    .photoBox{
+      border:1px dashed var(--line);
+      border-radius:16px;
+      background:rgba(255,255,255,0.02);
+      padding:10px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .photoPreview{
+      width:130px;height:130px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:#0b0b0c;
+      overflow:hidden;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .photoPreview img{
+      width:100%;height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .photoMeta{
+      flex:1;min-width:170px;
+    }
+    .photoMeta .title{font-weight:900}
+    .photoMeta .hint{color:var(--muted);font-size:13px;margin-top:2px}
+    .photoBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+    /* Files list */
     .files{display:flex;flex-direction:column;gap:8px;margin-top:6px}
     .file{
       display:flex;align-items:center;gap:8px;
@@ -74,7 +101,7 @@
     }
     .file span{
       flex:1;
-      min-width:0;                 /* ✅ essentiel */
+      min-width:0;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
@@ -88,7 +115,7 @@
       margin-top:14px;flex-wrap:wrap;
     }
 
-    /* Liste objets (simple, propre) */
+    /* Liste objets */
     #list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
     .gmItem{
       display:flex;gap:12px;align-items:flex-start;
@@ -96,7 +123,16 @@
       background:var(--card);
       overflow:hidden;
     }
-    .gmDot{width:10px;height:10px;border-radius:999px;background:var(--accent);margin-top:6px;flex:0 0 auto;}
+    .gmThumb{
+      width:52px;height:52px;border-radius:12px;
+      border:1px solid var(--line);
+      background:#0b0b0c;
+      overflow:hidden;
+      flex:0 0 auto;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:900;color:var(--muted);
+    }
+    .gmThumb img{width:100%;height:100%;object-fit:cover;display:block}
     .gmMeta{flex:1;min-width:0}
     .gmTitle{font-weight:950}
     .gmPlace{color:var(--muted);font-size:13px;margin-top:2px;white-space:pre-wrap}
@@ -110,7 +146,7 @@
     .gmActions{display:flex;flex-direction:column;gap:8px;flex:0 0 auto}
     .gmActions button{padding:8px 10px;border-radius:10px;font-weight:900}
 
-    /* Viewer intégré */
+    /* Viewer */
     .gmViewer{
       position:fixed;inset:0;z-index:9999;
       background:rgba(0,0,0,.75);
@@ -156,7 +192,7 @@
     <div class="row">
       <div class="grow">
         <h1>GarageMate</h1>
-        <p class="sub">V4.2 – documents (factures & notices) + fixes iPhone (zoom/slide/viewer)</p>
+        <p class="sub">V5 – photo principale + miniatures</p>
       </div>
       <button id="btnOpenAdd" class="primary">+ Ajouter</button>
     </div>
@@ -170,18 +206,33 @@
   </div>
 </header>
 
-<!-- PANEL AJOUT / ÉDITION -->
 <section id="panel" class="panel">
   <div class="card">
 
     <div class="label">Nom</div>
     <input id="fName" placeholder="Ex : Clé de 10" />
 
-    <!-- (les champs V3 + tuiles seront injectés par app.js, comme avant) -->
+    <!-- ✅ Photo principale -->
+    <div class="label">Photo principale</div>
+    <div class="photoBox">
+      <div class="photoPreview" id="photoPreview">
+        <span style="color:var(--muted);font-weight:900">Aucune</span>
+      </div>
+      <div class="photoMeta">
+        <div class="title" id="photoTitle">Aucune photo</div>
+        <div class="hint">Elle s’affiche dans la liste + dans la fiche.</div>
+        <div class="photoBtns">
+          <button id="btnPhotoPick">📷 Ajouter / Changer</button>
+          <button id="btnPhotoRemove" class="danger">🗑️ Supprimer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- input caché -->
+    <input id="photoInput" type="file" accept="image/*" capture="environment" style="display:none" />
 
     <div class="label">Documents (facture, notice, PDF, image…)</div>
     <input id="fileInput" type="file" multiple />
-
     <div id="filesList" class="files"></div>
 
     <div class="footerRow">
@@ -197,7 +248,6 @@
   <div id="list"></div>
 </main>
 
-<!-- ✅ Viewer IN-APP (fiable sur iPhone PWA) -->
 <div id="gmViewer" class="gmViewer">
   <div class="gmViewerBox">
     <div class="gmViewerTop">
